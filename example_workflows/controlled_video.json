@@ -1,0 +1,474 @@
+{
+  "id": "b11ee764-b552-51d2-b737-431e344507ef",
+  "revision": 0,
+  "last_node_id": 9,
+  "last_link_id": 9,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "LoadVideo",
+      "pos": [
+        0,
+        0
+      ],
+      "size": [
+        330,
+        160
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadVideo"
+      },
+      "widgets_values": [
+        "control_video.mp4",
+        "video"
+      ],
+      "title": "Input motion video: 8n+1 frames"
+    },
+    {
+      "id": 2,
+      "type": "GetVideoComponents",
+      "pos": [
+        380,
+        0
+      ],
+      "size": [
+        330,
+        160
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            2
+          ]
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": []
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "links": [
+            6
+          ]
+        },
+        {
+          "name": "bit_depth",
+          "type": "COMBO",
+          "links": []
+        },
+        {
+          "name": "color_space",
+          "type": "COMBO",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "GetVideoComponents"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 3,
+      "type": "Canny",
+      "pos": [
+        760,
+        0
+      ],
+      "size": [
+        330,
+        160
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Canny"
+      },
+      "widgets_values": [
+        0.1,
+        0.3
+      ],
+      "title": "Edges from motion video; bypass for prepared guides"
+    },
+    {
+      "id": 4,
+      "type": "LoadImage",
+      "pos": [
+        380,
+        320
+      ],
+      "size": [
+        330,
+        160
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            4
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "starting_image.png",
+        "image"
+      ],
+      "title": "Starting image aligned to first guide frame"
+    },
+    {
+      "id": 5,
+      "type": "LTXVMLXCheckpointLoader",
+      "pos": [
+        760,
+        600
+      ],
+      "size": [
+        330,
+        160
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "model",
+          "type": "LTXV_MLX_MODEL",
+          "links": [
+            3
+          ]
+        },
+        {
+          "name": "vae",
+          "type": "LTXV_MLX_VAE",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LTXVMLXCheckpointLoader"
+      },
+      "widgets_values": [
+        "dgrauet/ltx-2.3-mlx-q8",
+        false,
+        "low_vram"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "LTXMLXControlledVideo",
+      "pos": [
+        1140,
+        0
+      ],
+      "size": [
+        350,
+        440
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "LTXV_MLX_MODEL",
+          "link": 3
+        },
+        {
+          "name": "starting_image",
+          "type": "IMAGE",
+          "link": 4
+        },
+        {
+          "name": "control_frames",
+          "type": "IMAGE",
+          "link": 5
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "link": 6,
+          "widget": {
+            "name": "fps"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "video_frames",
+          "type": "IMAGE",
+          "links": [
+            7
+          ]
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "links": [
+            8
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LTXMLXControlledVideo"
+      },
+      "widgets_values": [
+        "Animate the subject in the starting image following the motion and framing of the supplied guides. Preserve its appearance, lighting and surface detail.",
+        48.0,
+        7,
+        "fixed",
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "id": 7,
+      "type": "CreateVideo",
+      "pos": [
+        1520,
+        0
+      ],
+      "size": [
+        330,
+        160
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 7
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "link": 8,
+          "widget": {
+            "name": "fps"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        48.0,
+        "auto",
+        "sRGB",
+        "none"
+      ],
+      "title": "Silent video at the sampling frame rate"
+    },
+    {
+      "id": 8,
+      "type": "SaveVideo",
+      "pos": [
+        1900,
+        0
+      ],
+      "size": [
+        330,
+        160
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 9
+        }
+      ],
+      "outputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveVideo"
+      },
+      "widgets_values": [
+        "ltx_mlx/controlled_video",
+        "auto",
+        "auto",
+        "auto"
+      ]
+    },
+    {
+      "id": 9,
+      "type": "Note",
+      "pos": [
+        0,
+        650
+      ],
+      "size": [
+        650,
+        250
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "Note"
+      },
+      "widgets_values": [
+        "Supply your own starting_image.png and control_video.mp4. Use matching dimensions divisible by 128 and a video of 9 to 257 frames with an 8n+1 count. The native video fps drives sampling and playback. For precomputed depth or edge guides, connect GetVideoComponents directly to control_frames. The model loader requires ComfyUI-LTXVideo-mlx and the v0.18.0 backend overrides documented in the README. Models must already be cached. Generation quality and memory use have not been tested."
+      ],
+      "title": "Read before running"
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "VIDEO"
+    ],
+    [
+      2,
+      2,
+      0,
+      3,
+      0,
+      "IMAGE"
+    ],
+    [
+      3,
+      5,
+      0,
+      6,
+      0,
+      "LTXV_MLX_MODEL"
+    ],
+    [
+      4,
+      4,
+      0,
+      6,
+      1,
+      "IMAGE"
+    ],
+    [
+      5,
+      3,
+      0,
+      6,
+      2,
+      "IMAGE"
+    ],
+    [
+      6,
+      2,
+      2,
+      6,
+      3,
+      "FLOAT"
+    ],
+    [
+      7,
+      6,
+      0,
+      7,
+      0,
+      "IMAGE"
+    ],
+    [
+      8,
+      6,
+      1,
+      7,
+      1,
+      "FLOAT"
+    ],
+    [
+      9,
+      7,
+      0,
+      8,
+      0,
+      "VIDEO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "loom": {
+      "for": "video"
+    }
+  },
+  "version": 0.4
+}

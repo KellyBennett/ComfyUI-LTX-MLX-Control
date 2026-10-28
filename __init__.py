@@ -1,4 +1,4 @@
-"""First-party Strum adapter for the installed MLX pipeline. No monkeypatches.
+"""ComfyUI adapter for LTX MLX video generation with IC-LoRA control.
 
 Requires ltx-pipelines-mlx
 v0.18.0 (b82b97e3d000e01361f8cfcb745244b15b89a521) and the declared MLX pack.
@@ -45,24 +45,39 @@ def write_lossless_video(path, frames, fps):
         for packet in stream.encode():container.mux(packet)
 
 
-class StrumMLXControlledVideo:
+class LTXMLXControlledVideo:
+    DESCRIPTION = (
+        'Generate silent LTX 2.3 video on Apple Silicon with MLX IC-LoRA Union Control. '
+        'Use when a starting image and aligned canny or depth guides must control motion, '
+        'with an explicit sampling frame rate and control retained during refinement. '
+        'Runs 8 sampling steps at half resolution, then 3 controlled refinement steps. '
+        'Accepts one RGB starting image and 9 to 257 RGB guide frames (8n+1), all at the '
+        'same dimensions, with width and height divisible by 128. Output size and frame '
+        'count come from the guides. Returns RGB frames and fps for CreateVideo; no audio. '
+        'Requires LTXVMLXCheckpointLoader, the pinned MLX v0.18.0 backend, and cached '
+        'Gemma and Union Control models. See example_workflows/controlled_video.json '
+        'in ComfyUI-LTX-MLX-Control. Generation quality and peak memory remain untested.'
+    )
+
     @classmethod
     def INPUT_TYPES(cls):
         return {'required':{
-            'model':('LTXV_MLX_MODEL',),
-            'starting_image':('IMAGE',),
-            'control_frames':('IMAGE',),
-            'prompt':('STRING',{'multiline':True,'default':''}),
-            'fps':('FLOAT',{'default':48.0,'min':1.0,'max':120.0,'step':1.0}),
-            'seed':('INT',{'default':7,'min':0,'max':2147483647}),
-            'lora_strength':('FLOAT',{'default':1.0,'min':0.0,'max':2.0,'step':0.05}),
-            'reference_strength':('FLOAT',{'default':1.0,'min':0.0,'max':1.0,'step':0.05}),
-            'attention_strength':('FLOAT',{'default':1.0,'min':0.0,'max':1.0,'step':0.05}),
+            'model':('LTXV_MLX_MODEL',{'tooltip':'Connect LTXVMLXCheckpointLoader. Use the cached dgrauet/ltx-2.3-mlx-q8 model and low_vram memory profile.'}),
+            'starting_image':('IMAGE',{'tooltip':'One RGB image matching the first guide frame, with identical dimensions and framing.'}),
+            'control_frames':('IMAGE',{'tooltip':'Aligned RGB canny or depth guides, already preprocessed. Supply 8n+1 consecutive frames, from 9 to 257. Their dimensions set the output size; each dimension must be divisible by 128.'}),
+            'prompt':('STRING',{'multiline':True,'default':'','tooltip':'Describe the subject, appearance and intended motion shown by the input image and guides.'}),
+            'fps':('FLOAT',{'default':48.0,'min':1.0,'max':120.0,'step':1.0,'tooltip':'Frame rate used inside sampling and returned for playback. Match the guide sampling rate and connect the fps output to CreateVideo.'}),
+            'seed':('INT',{'default':7,'min':0,'max':2147483647,'tooltip':'Keep fixed when comparing control strengths.'}),
+            'lora_strength':('FLOAT',{'default':1.0,'min':0.0,'max':2.0,'step':0.05,'tooltip':'Weight of the cached Union Control IC-LoRA. It remains applied during refinement.'}),
+            'reference_strength':('FLOAT',{'default':1.0,'min':0.0,'max':1.0,'step':0.05,'tooltip':'Strength of the reference video conditioning in the MLX pipeline.'}),
+            'attention_strength':('FLOAT',{'default':1.0,'min':0.0,'max':1.0,'step':0.05,'tooltip':'Scales attention to the control reference. 0 ignores it; 1 uses full conditioning attention.'}),
         }}
     RETURN_TYPES=('IMAGE','FLOAT')
     RETURN_NAMES=('video_frames','fps')
+    OUTPUT_TOOLTIPS=('Generated RGB frames at the guide dimensions and frame count.',
+                     'The sampling frame rate. Connect to CreateVideo to preserve timing.')
     FUNCTION='generate'
-    CATEGORY='Strum/MLX'
+    CATEGORY='video/LTX/MLX/IC-LoRA'
 
     def generate(self,model,starting_image,control_frames,prompt,fps,seed,
                  lora_strength,reference_strength,attention_strength):
@@ -92,7 +107,7 @@ class StrumMLXControlledVideo:
         pipe=None
         chunks=[]
         try:
-            with TemporaryDirectory(prefix='strum_mlx_') as temp:
+            with TemporaryDirectory(prefix='ltx_mlx_control_') as temp:
                 folder=Path(temp)
                 guide=folder/'control.mkv';first=folder/'first.png'
                 write_lossless_video(guide,control_frames,fps)
@@ -129,5 +144,5 @@ class StrumMLXControlledVideo:
             gc.collect();aggressive_cleanup()
 
 
-NODE_CLASS_MAPPINGS={'StrumMLXControlledVideo':StrumMLXControlledVideo}
-NODE_DISPLAY_NAME_MAPPINGS={'StrumMLXControlledVideo':'Strum MLX controlled video'}
+NODE_CLASS_MAPPINGS={'LTXMLXControlledVideo':LTXMLXControlledVideo}
+NODE_DISPLAY_NAME_MAPPINGS={'LTXMLXControlledVideo':'LTX 2.3 MLX IC-LoRA Video (Frame Rate + Controlled Refinement)'}
