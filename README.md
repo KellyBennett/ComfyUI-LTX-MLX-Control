@@ -40,7 +40,7 @@ The following model repositories must already be cached:
 - `mlx-community/gemma-3-12b-it-4bit`
 - `Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control`
 
-The adapter resolves the text encoder and control model from the local cache. It sends no media to an external service. Temporary control video uses lossless FFV1 encoding, and temporary files are removed after execution.
+The adapter resolves the text encoder's JSON, safetensors and tokenizer model files and the exact Union Control weight file from the local cache. Repository documentation, Git metadata and example media do not need to be cached. Missing inference assets still fail without downloading. It sends no media to an external service. Temporary control video uses lossless FFV1 encoding, and temporary files are removed after execution.
 
 ## Validation
 

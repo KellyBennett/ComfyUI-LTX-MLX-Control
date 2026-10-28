@@ -8,6 +8,22 @@ from tempfile import TemporaryDirectory
 import math
 
 
+def cached_model_paths(cache_dir=None):
+    """Resolve inference assets offline without requiring repository documentation."""
+    from huggingface_hub import hf_hub_download, snapshot_download
+    gemma = snapshot_download(
+        'mlx-community/gemma-3-12b-it-4bit',
+        allow_patterns=['*.json', '*.safetensors', '*.model'],
+        cache_dir=cache_dir, local_files_only=True,
+    )
+    lora = hf_hub_download(
+        'Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control',
+        filename='ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors',
+        cache_dir=cache_dir, local_files_only=True,
+    )
+    return gemma, Path(lora)
+
+
 def generation_request(image_shape, guide_shape, fps, seed, reference_strength, attention_strength):
     if len(image_shape) != 4 or image_shape[0] != 1 or image_shape[-1] != 3:
         raise ValueError('Supply exactly one RGB photographic starting frame.')
@@ -89,14 +105,12 @@ class LTXMLXControlledVideo:
         import torch
         import mlx.core as mx
         from PIL import Image
-        from huggingface_hub import snapshot_download
         from ltx_pipelines_mlx.ic_lora import ICLoraPipeline
         from ltx_core_mlx.model.video_vae.video_vae import _compute_decode_tiling
         from ltx_core_mlx.utils.memory import aggressive_cleanup
         import comfy.model_management
         # All model repositories must already be cached. Never download implicitly.
-        gemma=snapshot_download('mlx-community/gemma-3-12b-it-4bit',local_files_only=True)
-        lora=Path(snapshot_download('Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control',local_files_only=True))/'ltx-2.3-22b-ic-lora-union-control-ref0.5.safetensors'
+        gemma,lora=cached_model_paths()
         if not lora.is_file():raise FileNotFoundError(lora)
         model_dir=Path(model.model_dir)
         if not model_dir.is_dir():raise FileNotFoundError(model_dir)
