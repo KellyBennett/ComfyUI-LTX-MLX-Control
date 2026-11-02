@@ -27,14 +27,17 @@ so keys outside transformer blocks are retained. Header checks report each
 unmatched or incomplete pair and reject an adapter with no complete matches.
 The backend performs tensor-shape checks during fusion.
 
-CPU tests cover the connection contract, invalid strengths and paths, and
-unmatched or incomplete pairs including adaLN keys. An independent header and
+Tests cover the connection contract, absent and disabled characters, positive
+and negative strengths, invalid paths and strengths, and unmatched or incomplete
+pairs including adaLN keys. An independent header and
 shape audit found all 1,152 tensors in the existing FZZ spike LoRA compatible
 with the cached distilled 1.1 q8 model. That audit does not demonstrate visual
 quality or controlled inference. No new training or rental was performed.
 
 Run `python -m unittest discover -s tests` in the environment with the pinned
-backend installed. The LoRA audit tests use its real key mapper, including a
-ComfyUI prefix and renamed attention projection. They allocate no model tensors
-and load no weights. Missing backend dependencies fail the test instead of
-skipping this compatibility check.
+backend and its dependencies installed. The LoRA audit tests use its real key
+mapper, including a ComfyUI prefix and renamed attention projection. Preparation
+tests construct the real backend with header-only temporary files and check
+component release after normal use and a rejected character audit. They run no
+generation and load no weights. Missing backend dependencies fail the test
+instead of skipping these compatibility checks.
