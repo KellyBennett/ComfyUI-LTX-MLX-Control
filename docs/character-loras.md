@@ -32,3 +32,9 @@ unmatched or incomplete pairs including adaLN keys. An independent header and
 shape audit found all 1,152 tensors in the existing FZZ spike LoRA compatible
 with the cached distilled 1.1 q8 model. That audit does not demonstrate visual
 quality or controlled inference. No new training or rental was performed.
+
+Run `python -m unittest discover -s tests` in the environment with the pinned
+backend installed. The LoRA audit tests use its real key mapper, including a
+ComfyUI prefix and renamed attention projection. They allocate no model tensors
+and load no weights. Missing backend dependencies fail the test instead of
+skipping this compatibility check.
