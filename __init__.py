@@ -3,6 +3,7 @@
 Requires ltx-pipelines-mlx
 v0.18.0 (b82b97e3d000e01361f8cfcb745244b15b89a521) and the declared MLX pack.
 """
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import math
@@ -61,6 +62,52 @@ def write_lossless_video(path, frames, fps):
         for packet in stream.encode():container.mux(packet)
 
 
+def character_lora_choice(character_lora):
+    """Normalize the community picker once, including its disabled selection."""
+    if character_lora is None:
+        return None
+    try:
+        path, strength = character_lora
+        if not Path(path).is_file() or not math.isfinite(strength) or not -4 <= strength <= 4:
+            raise ValueError
+    except (TypeError, ValueError):
+        raise ValueError('Invalid character LoRA path or strength. Use strength between -4 and 4.') from None
+    return (str(path), float(strength)) if strength else None
+
+
+def pipeline_loras(control_path, control_strength, character_lora=None):
+    """Accept the community LTX2MLXLora tuple alongside Union Control."""
+    if not math.isfinite(control_strength) or not 0 <= control_strength <= 2:
+        raise ValueError('Union Control strength must be between 0 and 2.')
+    result = [(str(control_path), control_strength)]
+    character = character_lora_choice(character_lora)
+    if character is not None:
+        result.append(character)
+    return result
+
+
+@contextmanager
+def controlled_pipeline(model_dir, gemma, control_path, control_strength, character_lora=None):
+    """Own backend construction, character auditing and release together."""
+    from ltx_pipelines_mlx.ic_lora import ICLoraPipeline
+    loras = pipeline_loras(control_path, control_strength, character_lora)
+    pipe = ICLoraPipeline(str(model_dir), lora_paths=loras, gemma_model_id=gemma,
+                          low_memory=True, low_ram_streaming=False)
+    try:
+        # Only the enabled, normalized character is appended after Union Control.
+        if len(loras) > 1:
+            from .lora_audit import audit_lora
+            audit_lora(loras[1][0], pipe._resolve_distilled_transformer(Path(model_dir)))
+        pipe.generate_audio = False
+        yield pipe
+    finally:
+        pipe.dit = None
+        pipe.upsampler = None
+        for name in ('prompt_encoder', 'image_conditioner', 'audio_conditioner',
+                     'video_decoder_block', 'audio_decoder_block'):
+            getattr(pipe, name).free()
+
+
 class LTXMLXControlledVideo:
     DESCRIPTION = (
         'Generate silent LTX 2.3 video on Apple Silicon with MLX IC-LoRA Union Control. '
@@ -87,6 +134,8 @@ class LTXMLXControlledVideo:
             'lora_strength':('FLOAT',{'default':1.0,'min':0.0,'max':2.0,'step':0.05,'tooltip':'Weight of the cached Union Control IC-LoRA. It remains applied during refinement.'}),
             'reference_strength':('FLOAT',{'default':1.0,'min':0.0,'max':1.0,'step':0.05,'tooltip':'Strength of the reference video conditioning in the MLX pipeline.'}),
             'attention_strength':('FLOAT',{'default':1.0,'min':0.0,'max':1.0,'step':0.05,'tooltip':'Scales attention to the control reference. 0 ignores it; 1 uses full conditioning attention.'}),
+        }, 'optional': {
+            'character_lora': ('LTX2MLX_LORA', {'tooltip': 'Connect the community LTX2MLXLora picker. Its path and strength are retained alongside Union Control during refinement.'}),
         }}
     RETURN_TYPES=('IMAGE','FLOAT')
     RETURN_NAMES=('video_frames','fps')
@@ -96,7 +145,7 @@ class LTXMLXControlledVideo:
     CATEGORY='video/LTX/MLX/IC-LoRA'
 
     def generate(self,model,starting_image,control_frames,prompt,fps,seed,
-                 lora_strength,reference_strength,attention_strength):
+                 lora_strength,reference_strength,attention_strength,character_lora=None):
         request=generation_request(starting_image.shape,control_frames.shape,fps,seed,
                                    reference_strength,attention_strength)
         if not prompt.strip():raise ValueError('A shot description is required.')
@@ -105,7 +154,6 @@ class LTXMLXControlledVideo:
         import torch
         import mlx.core as mx
         from PIL import Image
-        from ltx_pipelines_mlx.ic_lora import ICLoraPipeline
         from ltx_core_mlx.model.video_vae.video_vae import _compute_decode_tiling
         from ltx_core_mlx.utils.memory import aggressive_cleanup
         import comfy.model_management
@@ -118,7 +166,6 @@ class LTXMLXControlledVideo:
         model.unload()
         comfy.model_management.unload_all_models()
         comfy.model_management.soft_empty_cache()
-        pipe=None
         chunks=[]
         try:
             with TemporaryDirectory(prefix='ltx_mlx_control_') as temp:
@@ -127,33 +174,27 @@ class LTXMLXControlledVideo:
                 write_lossless_video(guide,control_frames,fps)
                 pixels=np.clip(np.rint(starting_image[0].detach().cpu().numpy()*255),0,255).astype(np.uint8)
                 Image.fromarray(pixels).save(first)
-                pipe=ICLoraPipeline(str(model_dir),lora_paths=[(str(lora),lora_strength)],
-                                    gemma_model_id=gemma,low_memory=True)
-                pipe.generate_audio=False
-                video,audio=pipe.generate(prompt=prompt,
-                    video_conditioning=[(str(guide),reference_strength)],
-                    images=[(str(first),0,1.0)],**request)
-                mx.eval(video)
-                del audio
-                pipe.dit=None;pipe.upsampler=None;pipe._loaded=False
-                pipe.prompt_encoder.free();pipe.image_conditioner.free()
-                aggressive_cleanup()
-                decoder=pipe.video_decoder_block.load()
-                tiling=_compute_decode_tiling(tuple(video.shape),frame_rate=fps)
-                for chunk in decoder.tiled_decode(video,tiling):
-                    mx.eval(chunk)
-                    pixels=np.array(chunk.astype(mx.float32))[0].transpose(1,2,3,0)
-                    chunks.append(torch.from_numpy(np.clip((pixels+1)*0.5,0,1)))
-                frames=torch.cat(chunks,dim=0)
-                expected=(request['num_frames'],request['height'],request['width'],3)
-                if tuple(frames.shape)!=expected:
-                    raise RuntimeError(f'Decoder returned {tuple(frames.shape)}, expected {expected}.')
-                return frames,float(fps)
+                with controlled_pipeline(model_dir,gemma,lora,lora_strength,character_lora) as pipe:
+                    video,audio=pipe.generate(prompt=prompt,
+                        video_conditioning=[(str(guide),reference_strength)],
+                        images=[(str(first),0,1.0)],**request)
+                    mx.eval(video)
+                    del audio
+                    pipe.dit=None;pipe.upsampler=None;pipe._loaded=False
+                    pipe.prompt_encoder.free();pipe.image_conditioner.free()
+                    aggressive_cleanup()
+                    decoder=pipe.video_decoder_block.load()
+                    tiling=_compute_decode_tiling(tuple(video.shape),frame_rate=fps)
+                    for chunk in decoder.tiled_decode(video,tiling):
+                        mx.eval(chunk)
+                        pixels=np.array(chunk.astype(mx.float32))[0].transpose(1,2,3,0)
+                        chunks.append(torch.from_numpy(np.clip((pixels+1)*0.5,0,1)))
+                    frames=torch.cat(chunks,dim=0)
+                    expected=(request['num_frames'],request['height'],request['width'],3)
+                    if tuple(frames.shape)!=expected:
+                        raise RuntimeError(f'Decoder returned {tuple(frames.shape)}, expected {expected}.')
+                    return frames,float(fps)
         finally:
-            if pipe is not None:
-                pipe.dit=None;pipe.upsampler=None
-                for name in ('prompt_encoder','image_conditioner','audio_conditioner','video_decoder_block','audio_decoder_block'):
-                    getattr(pipe,name).free()
             chunks.clear()
             gc.collect();aggressive_cleanup()
 

@@ -3,14 +3,42 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from fractions import Fraction
 import unittest
+import sys
 import json
 import numpy as np
 import torch
 import av
 spec=importlib.util.spec_from_file_location('adapter',Path(__file__).resolve().parents[1]/'__init__.py')
-adapter=importlib.util.module_from_spec(spec);spec.loader.exec_module(adapter)
+adapter=importlib.util.module_from_spec(spec);sys.modules[spec.name]=adapter;spec.loader.exec_module(adapter)
 
 class InputContract(unittest.TestCase):
+    def test_community_character_lora_joins_control_without_mutation(self):
+        with TemporaryDirectory() as temp:
+            path=Path(temp)/'character.safetensors';path.touch()
+            character=(str(path),1.0)
+            self.assertEqual(adapter.pipeline_loras('union.safetensors',0.8,character),
+                             [('union.safetensors',0.8),character])
+            self.assertEqual(character,(str(path),1.0))
+            self.assertIn('character_lora',adapter.LTXMLXControlledVideo.INPUT_TYPES()['optional'])
+            with self.assertRaises(ValueError):adapter.pipeline_loras('union',float('nan'),character)
+            path.unlink()
+            with self.assertRaises(ValueError):adapter.pipeline_loras('union',1.0,character)
+
+    def test_character_selection_is_normalized_or_disabled_before_backend_setup(self):
+        with TemporaryDirectory() as temp:
+            path=Path(temp)/'character.safetensors';path.touch()
+            for character in (None,(path,0.0)):
+                with self.subTest(character=character):
+                    self.assertEqual(adapter.pipeline_loras('union',1.0,character),[('union',1.0)])
+            for strength in (1.0,-0.5):
+                with self.subTest(strength=strength):
+                    self.assertEqual(adapter.pipeline_loras('union',1.0,(path,strength)),
+                                     [('union',1.0),(str(path),strength)])
+            for character in ((path,float('nan')),(path,float('inf')),(path,4.1),
+                              (path,-4.1),(path,'strong'),(path,),('missing',0)):
+                with self.subTest(character=character),self.assertRaises(ValueError):
+                    adapter.pipeline_loras('union',1.0,character)
+
     def test_fast_motion_request_keeps_timing_and_control(self):
         r=adapter.generation_request((1,1152,2048,3),(33,1152,2048,3),48,7,1,1)
         self.assertEqual((r['num_frames'],r['frame_rate'],r['stage1_steps'],r['refine_steps']),(33,48,8,3))
