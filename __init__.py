@@ -61,6 +61,20 @@ def write_lossless_video(path, frames, fps):
         for packet in stream.encode():container.mux(packet)
 
 
+def pipeline_loras(control_path, control_strength, character_lora=None):
+    """Accept the community LTX2MLXLora tuple alongside Union Control."""
+    if not math.isfinite(control_strength) or not 0 <= control_strength <= 2:
+        raise ValueError('Union Control strength must be between 0 and 2.')
+    result = [(str(control_path), control_strength)]
+    if character_lora is not None:
+        path, strength = character_lora
+        if not Path(path).is_file() or not math.isfinite(strength) or not -4 <= strength <= 4:
+            raise ValueError('Invalid character LoRA path or strength. Use strength between -4 and 4.')
+        if strength:
+            result.append((str(path), float(strength)))
+    return result
+
+
 class LTXMLXControlledVideo:
     DESCRIPTION = (
         'Generate silent LTX 2.3 video on Apple Silicon with MLX IC-LoRA Union Control. '
@@ -87,6 +101,8 @@ class LTXMLXControlledVideo:
             'lora_strength':('FLOAT',{'default':1.0,'min':0.0,'max':2.0,'step':0.05,'tooltip':'Weight of the cached Union Control IC-LoRA. It remains applied during refinement.'}),
             'reference_strength':('FLOAT',{'default':1.0,'min':0.0,'max':1.0,'step':0.05,'tooltip':'Strength of the reference video conditioning in the MLX pipeline.'}),
             'attention_strength':('FLOAT',{'default':1.0,'min':0.0,'max':1.0,'step':0.05,'tooltip':'Scales attention to the control reference. 0 ignores it; 1 uses full conditioning attention.'}),
+        }, 'optional': {
+            'character_lora': ('LTX2MLX_LORA', {'tooltip': 'Connect the community LTX2MLXLora picker. Its path and strength are retained alongside Union Control during refinement.'}),
         }}
     RETURN_TYPES=('IMAGE','FLOAT')
     RETURN_NAMES=('video_frames','fps')
@@ -96,7 +112,7 @@ class LTXMLXControlledVideo:
     CATEGORY='video/LTX/MLX/IC-LoRA'
 
     def generate(self,model,starting_image,control_frames,prompt,fps,seed,
-                 lora_strength,reference_strength,attention_strength):
+                 lora_strength,reference_strength,attention_strength,character_lora=None):
         request=generation_request(starting_image.shape,control_frames.shape,fps,seed,
                                    reference_strength,attention_strength)
         if not prompt.strip():raise ValueError('A shot description is required.')
@@ -127,8 +143,11 @@ class LTXMLXControlledVideo:
                 write_lossless_video(guide,control_frames,fps)
                 pixels=np.clip(np.rint(starting_image[0].detach().cpu().numpy()*255),0,255).astype(np.uint8)
                 Image.fromarray(pixels).save(first)
-                pipe=ICLoraPipeline(str(model_dir),lora_paths=[(str(lora),lora_strength)],
-                                    gemma_model_id=gemma,low_memory=True)
+                pipe=ICLoraPipeline(str(model_dir),lora_paths=pipeline_loras(lora,lora_strength,character_lora),
+                                    gemma_model_id=gemma,low_memory=True,low_ram_streaming=False)
+                if character_lora is not None and character_lora[1]:
+                    from .lora_audit import audit_lora
+                    audit_lora(character_lora[0],pipe._resolve_distilled_transformer(model_dir))
                 pipe.generate_audio=False
                 video,audio=pipe.generate(prompt=prompt,
                     video_conditioning=[(str(guide),reference_strength)],

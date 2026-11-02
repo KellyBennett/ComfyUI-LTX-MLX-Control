@@ -11,6 +11,18 @@ spec=importlib.util.spec_from_file_location('adapter',Path(__file__).resolve().p
 adapter=importlib.util.module_from_spec(spec);spec.loader.exec_module(adapter)
 
 class InputContract(unittest.TestCase):
+    def test_community_character_lora_joins_control_without_mutation(self):
+        with TemporaryDirectory() as temp:
+            path=Path(temp)/'character.safetensors';path.touch()
+            character=(str(path),1.0)
+            self.assertEqual(adapter.pipeline_loras('union.safetensors',0.8,character),
+                             [('union.safetensors',0.8),character])
+            self.assertEqual(character,(str(path),1.0))
+            self.assertIn('character_lora',adapter.LTXMLXControlledVideo.INPUT_TYPES()['optional'])
+            with self.assertRaises(ValueError):adapter.pipeline_loras('union',float('nan'),character)
+            path.unlink()
+            with self.assertRaises(ValueError):adapter.pipeline_loras('union',1.0,character)
+
     def test_fast_motion_request_keeps_timing_and_control(self):
         r=adapter.generation_request((1,1152,2048,3),(33,1152,2048,3),48,7,1,1)
         self.assertEqual((r['num_frames'],r['frame_rate'],r['stage1_steps'],r['refine_steps']),(33,48,8,3))
