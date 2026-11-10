@@ -6,6 +6,8 @@ The node connects ComfyUI to the IC-LoRA pipeline in `ltx-pipelines-mlx`. It pas
 
 Connect an MLX model from `LTXVMLXCheckpointLoader`, one photographic starting image, and an RGB batch of control frames. The starting image and control frames must have the same dimensions. Width and height must be divisible by 128, and the frame count must be 8n+1. The node returns RGB video frames and their frame rate. Connect both to `CreateVideo` for a silent video.
 
+To add a character or style LoRA, pick it from your `loras` folder in the optional `extra_lora` input. It is fused alongside the control LoRA and stays applied through refinement.
+
 The first generation stage runs at half the output size. Union Control uses a reference at half that stage's size. During refinement, the reference is encoded again at half the final output size. Inspect the reduced guides before spending compute on small moving details.
 
 ## Example workflow

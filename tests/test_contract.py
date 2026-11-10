@@ -32,6 +32,21 @@ class InputContract(unittest.TestCase):
                 actual=np.stack([f.to_ndarray(format='rgb24') for f in c.decode(video=0)])
         np.testing.assert_array_equal(actual,pixels)
 
+class ExtraLora(unittest.TestCase):
+    def test_none_is_the_first_choice(self):
+        self.assertEqual(adapter.extra_lora_choices(['a.safetensors']),['none','a.safetensors'])
+
+    def test_none_keeps_only_the_control_lora(self):
+        def resolve(name):raise AssertionError('none must not be resolved')
+        self.assertEqual(adapter.lora_stack(Path('control.safetensors'),0.8,'none',1.0,resolve),
+                         [('control.safetensors',0.8)])
+
+    def test_extra_lora_follows_the_control_lora(self):
+        stack=adapter.lora_stack(Path('control.safetensors'),1.0,'style/x.safetensors',0.6,
+                                 lambda name:Path('/loras')/name)
+        self.assertEqual(stack,[('control.safetensors',1.0),('/loras/style/x.safetensors',0.6)])
+
+
 class OfflineCache(unittest.TestCase):
     def setUp(self):
         self.temp=TemporaryDirectory()

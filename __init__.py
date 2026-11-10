@@ -46,6 +46,26 @@ def generation_request(image_shape, guide_shape, fps, seed, reference_strength, 
                 upsample_only=True, refine_steps=3)
 
 
+NO_EXTRA_LORA='none'
+
+
+def extra_lora_choices(names):
+    return [NO_EXTRA_LORA,*names]
+
+
+def comfy_lora_path(name):
+    import folder_paths
+    return folder_paths.get_full_path_or_raise('loras',name)
+
+
+def lora_stack(control_lora,control_strength,extra_lora=NO_EXTRA_LORA,extra_strength=1.0,
+               resolve=comfy_lora_path):
+    stack=[(str(control_lora),control_strength)]
+    if extra_lora!=NO_EXTRA_LORA:
+        stack.append((str(resolve(extra_lora)),extra_strength))
+    return stack
+
+
 def write_lossless_video(path, frames, fps):
     import av
     import numpy as np
@@ -72,11 +92,14 @@ class LTXMLXControlledVideo:
         'count come from the guides. Returns RGB frames and fps for CreateVideo; no audio. '
         'Requires LTXVMLXCheckpointLoader, the pinned MLX v0.18.0 backend, and cached '
         'Gemma and Union Control models. See example_workflows/controlled_video.json '
-        'in ComfyUI-LTX-MLX-Control. Generation quality and peak memory remain untested.'
+        'in ComfyUI-LTX-MLX-Control. Optionally fuses one extra LoRA, such as a character '
+        'or style LoRA, alongside the control LoRA through both stages. '
+        'Generation quality and peak memory remain untested.'
     )
 
     @classmethod
     def INPUT_TYPES(cls):
+        import folder_paths
         return {'required':{
             'model':('LTXV_MLX_MODEL',{'tooltip':'Connect LTXVMLXCheckpointLoader. Use the cached dgrauet/ltx-2.3-mlx-q8 model and low_vram memory profile.'}),
             'starting_image':('IMAGE',{'tooltip':'One RGB image matching the first guide frame, with identical dimensions and framing.'}),
@@ -87,6 +110,9 @@ class LTXMLXControlledVideo:
             'lora_strength':('FLOAT',{'default':1.0,'min':0.0,'max':2.0,'step':0.05,'tooltip':'Weight of the cached Union Control IC-LoRA. It remains applied during refinement.'}),
             'reference_strength':('FLOAT',{'default':1.0,'min':0.0,'max':1.0,'step':0.05,'tooltip':'Strength of the reference video conditioning in the MLX pipeline.'}),
             'attention_strength':('FLOAT',{'default':1.0,'min':0.0,'max':1.0,'step':0.05,'tooltip':'Scales attention to the control reference. 0 ignores it; 1 uses full conditioning attention.'}),
+        },'optional':{
+            'extra_lora':(extra_lora_choices(folder_paths.get_filename_list('loras')),{'default':NO_EXTRA_LORA,'tooltip':'An LTX 2.3 LoRA from the loras folder, such as a character or style LoRA, fused alongside the control LoRA and kept through refinement.'}),
+            'extra_lora_strength':('FLOAT',{'default':1.0,'min':0.0,'max':2.0,'step':0.05,'tooltip':'Weight of the extra LoRA. Ignored when extra_lora is none.'}),
         }}
     RETURN_TYPES=('IMAGE','FLOAT')
     RETURN_NAMES=('video_frames','fps')
@@ -96,7 +122,8 @@ class LTXMLXControlledVideo:
     CATEGORY='video/LTX/MLX/IC-LoRA'
 
     def generate(self,model,starting_image,control_frames,prompt,fps,seed,
-                 lora_strength,reference_strength,attention_strength):
+                 lora_strength,reference_strength,attention_strength,
+                 extra_lora=NO_EXTRA_LORA,extra_lora_strength=1.0):
         request=generation_request(starting_image.shape,control_frames.shape,fps,seed,
                                    reference_strength,attention_strength)
         if not prompt.strip():raise ValueError('A shot description is required.')
@@ -112,6 +139,7 @@ class LTXMLXControlledVideo:
         # All model repositories must already be cached. Never download implicitly.
         gemma,lora=cached_model_paths()
         if not lora.is_file():raise FileNotFoundError(lora)
+        loras=lora_stack(lora,lora_strength,extra_lora,extra_lora_strength)
         model_dir=Path(model.model_dir)
         if not model_dir.is_dir():raise FileNotFoundError(model_dir)
         # The existing loader is lazy; release any previous run before backend ownership.
@@ -127,7 +155,7 @@ class LTXMLXControlledVideo:
                 write_lossless_video(guide,control_frames,fps)
                 pixels=np.clip(np.rint(starting_image[0].detach().cpu().numpy()*255),0,255).astype(np.uint8)
                 Image.fromarray(pixels).save(first)
-                pipe=ICLoraPipeline(str(model_dir),lora_paths=[(str(lora),lora_strength)],
+                pipe=ICLoraPipeline(str(model_dir),lora_paths=loras,
                                     gemma_model_id=gemma,low_memory=True)
                 pipe.generate_audio=False
                 video,audio=pipe.generate(prompt=prompt,
